@@ -1,0 +1,146 @@
+{
+  "transfer_types": {
+    "achat_de_biens": {
+      "label": "Achat de biens",
+      "required_documents": [
+        "Ordre de virement",
+        "Attestation de Non-Redevance (ARN)",
+        "Attestation de domiciliation",
+        "Déclaration d’importation (Douane)",
+        "Lettre d’engagement",
+        "Facture"
+      ],
+      "apurement_deadline_months": 3
+    },
+    "achat_de_services": {
+      "label": "Achat de services",
+      "required_documents": [
+        "Ordre de virement",
+        "Attestation de Non-Redevance (ARN)",
+        "Attestation de domiciliation",
+        "Lettre d’engagement",
+        "Facture",
+        "Contrat de service",
+        "Déclaration et domiciliation d'importation de service"
+      ],
+      "apurement_deadline_months": 1
+    }
+  },
+  "document_checks": {
+    "ordre_de_virement": {
+      "checks": [
+        "Date de moins de 15 jours",
+        "Devise correcte",
+        "Montant en chiffres = Montant en lettres",
+        "Nom et compte de l'ordonnateur identifiés",
+        "Nom du bénéficiaire correspond au RIB/Facture",
+        "Banque et Code SWIFT identifiés",
+        "Motif du transfert détaillé"
+      ]
+    },
+    "fiche_engagement": {
+      "checks": [
+        "Nom du client exact",
+        "Montant et numéro correspondants à l'OV",
+        "Type de règlement identifié (Biens/Services)",
+        "Signature et cachet du client présents"
+      ]
+    },
+    "domiciliation": {
+      "checks": [
+        "Nom importateur correspond à l'OV",
+        "Numéro RCCM et NIF présents",
+        "Nom/Pays/Adresse du fournisseur identifiés",
+        "Référence facture correspond à l'OV et Douane",
+        "Montant et devise correspondent à la facture",
+        "Référence format: NIF/60001/M/réf/mois/année/devise",
+        "Signature client et gestionnaire avec cachets"
+      ]
+    },
+    "facture": {
+      "checks": [
+        "Nom du fournisseur correspond aux autres docs",
+        "Référence et date identifiées",
+        "Date de moins de 12 mois",
+        "Mode de règlement et montant total identifiés"
+      ]
+    },
+    "declaration_douaniere": {
+      "checks": [
+        "Noms importateur/fournisseur correspondent aux autres docs",
+        "Référence domiciliation correspond exactement",
+        "Référence et date facture correspondent",
+        "Montant total correspond à la domiciliation et facture"
+      ]
+    },
+    "quittance_douane": {
+      "checks": [
+        "Numéro de quittance identifié",
+        "Montant des droits et taxes payés",
+        "Date de paiement",
+        "Cachet de la douane ou banque"
+      ]
+    },
+    "lettre_de_mise_en_demeure": {
+      "checks": [
+        "Cachet du client présent",
+        "Cachet de la banque présent"
+      ]
+    },
+    "contrat_convention": {
+      "checks": [
+        "Noms des parties correspondent au dossier",
+        "Date de signature et validité",
+        "Enregistrement auprès des autorités (si applicable)",
+        "Montants et conditions correspondent à la facture"
+      ]
+    },
+    "kyc_legal": {
+      "checks": [
+        "RCCM et NIF valides",
+        "Statuts signés",
+        "Plan de localisation clair",
+        "Documents de moins de 3 mois (si applicable)"
+      ]
+    },
+    "identite": {
+      "checks": [
+        "Nom correspond à l'ordonnateur ou bénéficiaire",
+        "Date de validité non expirée",
+        "Photo claire et lisible",
+        "Visa ou carte de séjour valide (pour les non-résidents)"
+      ]
+    },
+    "salaire": {
+      "checks": [
+        "Nom de l'employeur et employé",
+        "Période de paie correspondante",
+        "Montant net à payer correspond à l'OV",
+        "Signature et cachet de l'employeur"
+      ]
+    },
+    "fiscalite": {
+      "checks": [
+        "ARN (Attestation de Non-Redevance) valide",
+        "Quittance d'impôt correspondante",
+        "Période fiscale couverte",
+        "Cachet des impôts lisible"
+      ]
+    },
+    "titre_transport": {
+      "checks": [
+        "Type de document identifié (B/L, LTA, Lettre de voiture)",
+        "Nom de l'importateur et fournisseur correspondent",
+        "Description des marchandises cohérente avec la facture",
+        "Date d'expédition et destination"
+      ]
+    },
+    "nif": {
+      "checks": [
+        "Numéro d'Identification Fiscale lisible",
+        "Nom de la société correspond au RCCM",
+        "Date de délivrance ou validité"
+      ]
+    }
+  }
+}

@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string
+    //   - photoURL: string
+    //   - role: string (enum: ['user', 'admin'])
+    //   - createdAt: timestamp
+    //
+    // Collection: analyses
+    // Fields:
+    //   - userId: string (required)
+    //   - fileName: string (required)
+    //   - documentType: string
+    //   - isTypeCorrect: boolean
+    //   - amountFigures: number
+    //   - amountWords: string
+    //   - areAmountsConsistent: boolean
+    //   - transferType: string
+    //   - detectedDocuments: list
+    //   - missingDocuments: list
+    //   - isCompliant: boolean
+    //   - complianceDetails: string
+    //   - status: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: dossiers
+    // Fields:
+    //   - userId: string (required)
+    //   - reference: string (required)
+    //   - clientName: string (required)
+    //   - country: string
+    //   - transferType: string
+    //   - amount: number
+    //   - currency: string
+    //   - status: string (required)
+    //   - createdAt: timestamp (required)
+    //   - updatedAt: timestamp
+    //   - analysisId: string
+    //   - score: number
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "gess.srh.td@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Domain Validators
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt']) &&
+             data.uid is string && data.email is string &&
+             data.role in ['user', 'admin'];
+    }
+
+    function isValidAnalysis(data) {
+      return hasRequiredFields(['userId', 'fileName', 'status', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.fileName is string &&
+             data.status is string;
+    }
+
+    function isValidDossier(data) {
+      return hasRequiredFields(['userId', 'reference', 'clientName', 'status', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.reference is string &&
+             data.clientName is string &&
+             data.status is string;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user';
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Analyses
+    match /analyses/{analysisId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidAnalysis(request.resource.data);
+      allow update: if (isDocOwner() && isValidAnalysis(request.resource.data)) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Dossiers
+    match /dossiers/{dossierId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidDossier(request.resource.data);
+      allow update: if (isDocOwner() && isValidDossier(request.resource.data)) || isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

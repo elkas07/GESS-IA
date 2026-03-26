@@ -1,0 +1,5 @@
+{
+  "name": "CEMAC Regional Transfer AI",
+  "description": "Plateforme régionale d'Afrique Centrale (6 pays) pour l'analyse IA de conformité des transferts CEMAC selon l'Arrêté 084.",
+  "requestFramePermissions": ["camera", "microphone"]
+}

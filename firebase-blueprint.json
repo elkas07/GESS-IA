@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Analysis": {
+      "title": "Document Analysis",
+      "description": "AI analysis results for a document",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fileName": { "type": "string" },
+        "documentType": { "type": "string" },
+        "isTypeCorrect": { "type": "boolean" },
+        "amountFigures": { "type": "string" },
+        "amountWords": { "type": "string" },
+        "areAmountsConsistent": { "type": "boolean" },
+        "transferType": { "type": "string" },
+        "detectedDocuments": { "type": "array", "items": { "type": "string" } },
+        "missingDocuments": { "type": "array", "items": { "type": "string" } },
+        "isCompliant": { "type": "boolean" },
+        "complianceDetails": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "fileName", "status", "createdAt"]
+    },
+    "Dossier": {
+      "title": "Transfer Dossier",
+      "description": "A complete transfer dossier",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "reference": { "type": "string" },
+        "clientName": { "type": "string" },
+        "country": { "type": "string" },
+        "transferType": { "type": "string" },
+        "amount": { "type": "string" },
+        "currency": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "analysisId": { "type": "string" },
+        "score": { "type": "number" }
+      },
+      "required": ["userId", "reference", "clientName", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/analyses/{analysisId}": {
+      "schema": "Analysis",
+      "description": "AI analysis history"
+    },
+    "/dossiers/{dossierId}": {
+      "schema": "Dossier",
+      "description": "Transfer dossiers"
+    }
+  }
+}
