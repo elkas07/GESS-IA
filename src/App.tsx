@@ -283,7 +283,8 @@ const validateDocumentWithAI = async (file: File, expectedType: string): Promise
       contents: [
         {
           parts: [
-            { text: `Analyse ce document. Est-ce qu'il s'agit bien d'un(e) "${expectedType}" ? ${extraInstructions}${checksText}
+            { text: `Nous sommes aujourd'hui le ${new Date().toLocaleDateString('fr-FR')}.
+            Analyse ce document. Est-ce qu'il s'agit bien d'un(e) "${expectedType}" ? ${extraInstructions}${checksText}
             Réponds au format JSON avec les champs suivants:
             - isValid: boolean
             - identifiedType: string (le type de document que tu as identifié)
@@ -317,6 +318,51 @@ const validateDocumentWithAI = async (file: File, expectedType: string): Promise
   } catch (error) {
     console.error("AI Validation Error:", error);
     return { isValid: false, message: "Erreur lors de l'analyse IA. Veuillez réessayer." };
+  }
+};
+
+const classifyDocumentWithAI = async (file: File, possibleTypes: string[]): Promise<{ identifiedType: string | null, confidence: number, reason: string }> => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const base64 = await fileToBase64(file);
+    const base64Data = base64.split(',')[1];
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        {
+          parts: [
+            { text: `Nous sommes aujourd'hui le ${new Date().toLocaleDateString('fr-FR')}.
+            Analyse ce document et identifie à quel type il appartient parmi la liste suivante :
+            ${possibleTypes.join('\n- ')}
+            
+            Réponds au format JSON avec les champs suivants:
+            - identifiedType: string (le type exact de la liste ci-dessus, ou null si aucun ne correspond)
+            - confidence: number (0-1)
+            - reason: string (explication courte en français)` },
+            { inlineData: { data: base64Data, mimeType: file.type } }
+          ]
+        }
+      ],
+      config: {
+        systemInstruction: "Tu es un expert en conformité bancaire pour la zone CEMAC. Ton rôle est de classifier les documents de transfert de fonds.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            identifiedType: { type: Type.STRING, nullable: true },
+            confidence: { type: Type.NUMBER },
+            reason: { type: Type.STRING }
+          },
+          required: ["identifiedType", "confidence", "reason"]
+        }
+      }
+    });
+
+    return JSON.parse(response.text);
+  } catch (error) {
+    console.error("AI Classification Error:", error);
+    return { identifiedType: null, confidence: 0, reason: "Erreur lors de l'analyse." };
   }
 };
 
@@ -497,6 +543,8 @@ function AppContent() {
 
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
   const [newDossierStep, setNewDossierStep] = useState(1);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [bulkProcessingResults, setBulkProcessingResults] = useState<{ fileName: string, status: 'processing' | 'success' | 'error', message: string }[]>([]);
   const [newDossierData, setNewDossierData] = useState({
     clientName: '',
     country: '',
@@ -505,6 +553,71 @@ function AppContent() {
     currency: 'XAF',
   });
   const [opiComment, setOpiComment] = useState("");
+
+  const handleBulkFiles = async (selectedFiles: File[]) => {
+    setIsBulkProcessing(true);
+    const initialResults: { fileName: string, status: 'processing' | 'success' | 'error', message: string }[] = selectedFiles.map(f => ({
+      fileName: f.name,
+      status: 'processing',
+      message: 'Analyse en cours...'
+    }));
+    setBulkProcessingResults(initialResults);
+
+    const possibleTypes = CHECKLISTS[newDossierData.transferType as keyof typeof CHECKLISTS] || [];
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      try {
+        const classification = await classifyDocumentWithAI(file, possibleTypes);
+        
+        if (classification.identifiedType && classification.confidence > 0.7) {
+          // Check if this type is already filled
+          if (files[classification.identifiedType]) {
+            initialResults[i] = {
+              fileName: file.name,
+              status: 'error',
+              message: `Doublon ignoré : ${classification.identifiedType} déjà présent.`
+            };
+          } else {
+            // Validate the document content now that we know the type
+            const validation = await validateDocumentWithAI(file, classification.identifiedType);
+            
+            if (validation.isValid) {
+              setFiles(prev => ({
+                ...prev,
+                [classification.identifiedType!]: file
+              }));
+              initialResults[i] = {
+                fileName: file.name,
+                status: 'success',
+                message: `Identifié comme : ${classification.identifiedType}`
+              };
+            } else {
+              initialResults[i] = {
+                fileName: file.name,
+                status: 'error',
+                message: `Identifié comme ${classification.identifiedType} mais non conforme : ${validation.message}`
+              };
+            }
+          }
+        } else {
+          initialResults[i] = {
+            fileName: file.name,
+            status: 'error',
+            message: "Type de document non identifié avec certitude."
+          };
+        }
+      } catch (error) {
+        initialResults[i] = {
+          fileName: file.name,
+          status: 'error',
+          message: "Erreur lors du traitement."
+        };
+      }
+      setBulkProcessingResults([...initialResults]);
+    }
+    setIsBulkProcessing(false);
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1606,46 +1719,78 @@ RÉSULTATS:
 
                   {newDossierStep === 2 && (
                     <div className="space-y-6">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-sm flex items-center gap-2">
-                            <FileText size={18} className="text-[#007AFF]" />
-                            Documents justificatifs requis
-                          </h4>
-                          <span className="text-[10px] font-bold text-[#8E8E93] uppercase tracking-wider">
-                            {Object.keys(files).length} / {CHECKLISTS[newDossierData.transferType]?.length || 0} documents
-                          </span>
+                      <div className="bg-white border border-[#E5E5E7] rounded-3xl p-8 space-y-6">
+                        <div>
+                          <h3 className="text-xl font-bold text-[#1D1D1F]">Upload des documents</h3>
+                          <p className="text-[#8E8E93] mt-1">
+                            Glissez-déposez ou sélectionnez les pièces justificatives du dossier. L'IA classifiera automatiquement chaque document.
+                          </p>
                         </div>
-                        
-                        <div className="space-y-3">
-                          {CHECKLISTS[newDossierData.transferType]?.map((item, idx) => (
-                            <RequiredDocItem 
-                              key={idx}
-                              title={item} 
-                              desc={`Veuillez joindre le document "${item}" pour ce type de transfert.`} 
-                              onFileSelect={(file) => {
-                                if (file) {
-                                  setFiles(prev => ({
-                                    ...prev,
-                                    [item]: file
-                                  }));
-                                }
-                              }}
-                            />
-                          ))}
+
+                        <BulkUploadZone 
+                          onFilesSelected={handleBulkFiles}
+                          isProcessing={isBulkProcessing}
+                        />
+
+                        {bulkProcessingResults.length > 0 && (
+                          <div className="space-y-3 mt-6">
+                            <h4 className="font-bold text-sm text-[#8E8E93] uppercase tracking-wider">Résultats de l'analyse</h4>
+                            <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                              {bulkProcessingResults.map((res, idx) => (
+                                <div key={idx} className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${res.status === 'success' ? 'bg-green-50 border-green-100' : res.status === 'error' ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
+                                  <div className="flex items-center gap-3 overflow-hidden">
+                                    {res.status === 'processing' ? (
+                                      <div className="w-5 h-5 border-2 border-[#007AFF] border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                                    ) : res.status === 'success' ? (
+                                      <Check size={18} className="text-green-600 flex-shrink-0" />
+                                    ) : (
+                                      <AlertCircle size={18} className="text-red-600 flex-shrink-0" />
+                                    )}
+                                    <div className="overflow-hidden">
+                                      <p className="text-sm font-bold truncate">{res.fileName}</p>
+                                      <p className={`text-xs ${res.status === 'success' ? 'text-green-600' : res.status === 'error' ? 'text-red-600' : 'text-gray-500'}`}>
+                                        {res.message}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="pt-4 border-t border-[#E5E5E7]">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="font-bold text-sm flex items-center gap-2">
+                              <FileText size={18} className="text-[#007AFF]" />
+                              État du dossier
+                            </h4>
+                            <span className="text-[10px] font-bold text-[#8E8E93] uppercase tracking-wider">
+                              {Object.keys(files).length} / {CHECKLISTS[newDossierData.transferType as keyof typeof CHECKLISTS]?.length || 0} documents identifiés
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {CHECKLISTS[newDossierData.transferType as keyof typeof CHECKLISTS]?.map((item, idx) => (
+                              <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg text-xs ${files[item] ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+                                {files[item] ? <Check size={14} /> : <div className="w-3.5 h-3.5 rounded-full border border-gray-300" />}
+                                <span className="truncate">{item}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
 
                       <div className="flex gap-4">
                         <button 
                           onClick={() => setNewDossierStep(1)}
-                          className="flex-1 py-3 bg-[#F5F5F7] text-[#1D1D1F] rounded-xl font-bold hover:bg-[#E5E5E7] transition-all"
+                          className="px-8 py-3 bg-[#F5F5F7] text-[#1D1D1F] rounded-xl font-bold hover:bg-[#E5E5E7] transition-all"
                         >
                           Retour
                         </button>
                         <button 
                           onClick={() => setNewDossierStep(3)}
-                          disabled={Object.keys(files).length === 0}
+                          disabled={Object.keys(files).length === 0 || isBulkProcessing}
                           className="flex-1 py-3 bg-[#007AFF] text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#0056B3] transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
                         >
                           Continuer <ArrowRight size={18} />
@@ -3899,6 +4044,53 @@ function RequiredDocItem({ title, desc, onUpload, onFileSelect, expectedType }: 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function BulkUploadZone({ onFilesSelected, isProcessing }: { onFilesSelected: (files: File[]) => void, isProcessing: boolean }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onFilesSelected(Array.from(e.target.files));
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      onFilesSelected(Array.from(e.dataTransfer.files));
+    }
+  };
+
+  return (
+    <div 
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+      className={`border-2 border-dashed rounded-3xl p-12 flex flex-col items-center justify-center gap-4 transition-all ${isProcessing ? 'bg-gray-50 border-gray-200 cursor-not-allowed' : 'border-[#E5E5E7] hover:border-[#007AFF] hover:bg-blue-50/30 cursor-pointer'}`}
+      onClick={() => !isProcessing && fileInputRef.current?.click()}
+    >
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+        multiple 
+        accept=".pdf,.jpg,.jpeg,.png"
+      />
+      <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center text-[#007AFF]">
+        {isProcessing ? (
+          <div className="w-8 h-8 border-4 border-[#007AFF] border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <Upload size={32} />
+        )}
+      </div>
+      <div className="text-center">
+        <p className="text-lg font-bold text-[#1D1D1F]">Cliquez pour sélectionner des fichiers</p>
+        <p className="text-sm text-[#8E8E93] mt-1">PDF, Images, Word — Max 20 Mo</p>
+        <p className="text-xs text-[#8E8E93] mt-2 italic">L'IA classifiera automatiquement chaque document.</p>
+      </div>
     </div>
   );
 }
